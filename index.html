@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CS 1.6 Web Mobile</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.1/nipplejs.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; touch-action: none; font-family: 'Courier New', Courier, monospace; }
+        
+        /* Joystick Alanı */
+        #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; z-index: 100; }
+
+        /* Ateş Etme / Vurma Butonu (Yumruk İkonu) */
+        #shoot-btn {
+            position: absolute; bottom: 120px; right: 40px; width: 90px; height: 90px;
+            background: url('https://cdn-icons-png.flaticon.com/512/1004/1004664.png') no-repeat center;
+            background-size: 70%; background-color: rgba(255,0,0,0.4);
+            border: 4px solid white; border-radius: 50%; z-index: 100;
+        }
+
+        /* Zıplama Butonu */
+        #jump-btn {
+            position: absolute; bottom: 40px; right: 140px; width: 70px; height: 70px;
+            background: rgba(255,255,255,0.2); border: 2px solid white; border-radius: 50%;
+            color: white; display: flex; justify-content: center; align-items: center; font-weight: bold; z-index: 100;
+        }
+
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; justify-content: center; align-items: center; color: white; }
+        #start-btn { padding: 20px 50px; font-size: 24px; background: #c0392b; color: white; border: none; cursor: pointer; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="overlay"><button id="start-btn">LOAD CS 1.6 MAP</button></div>
+    <div id="joystick-zone"></div>
+    <div id="shoot-btn"></div>
+    <div id="jump-btn">JUMP</div>
+
+    <a-scene vr-mode-ui="enabled: false" renderer="antialias: true">
+        <a-assets>
+            <a-asset-item id="map-model" src="cs_map.glb"></a-asset-item>
+            <a-asset-item id="gun-model" src="https://cdn.aframe.io/test-models/models/glTF-2.0/virtualcity/VC.gltf"></a-asset-item>
+        </a-assets>
+
+        <a-sky color="#222"></a-sky>
+
+        <a-entity gltf-model="#map-model" position="0 0 0" scale="1 1 1"></a-entity>
+
+        <a-entity id="rig" position="0 1.6 5">
+            <a-entity id="camera" camera look-controls="reverseTouchDrag: true">
+                <a-entity cursor="fuse: false" position="0 0 -1"
+                          geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.015"
+                          material="color: #00ff00; shader: flat"></a-entity>
+                
+                <a-entity id="weapon" position="0.3 -0.3 -0.5" rotation="0 180 0" scale="0.05 0.05 0.05"
+                          geometry="primitive: box; width: 0.1; height: 0.1; depth: 0.5" material="color: #333">
+                    <a-light id="muzzle-flash" type="point" intensity="0" color="orange" position="0 0 0.5"></a-light>
+                </a-entity>
+            </a-entity>
+        </a-entity>
+    </a-scene>
+
+    <script>
+        const rig = document.getElementById('rig');
+        const cam = document.getElementById('camera');
+        const weapon = document.getElementById('weapon');
+        const flash = document.getElementById('muzzle-flash');
+
+        // START
+        document.getElementById('start-btn').onclick = () => {
+            document.documentElement.requestFullscreen();
+            document.getElementById('overlay').style.display = 'none';
+        };
+
+        // SHOOT / PUNCH ANIMATION
+        document.getElementById('shoot-btn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            // Ateş animasyonu (Geri tepme)
+            weapon.setAttribute('animation', "property: position; from: 0.3 -0.3 -0.5; to: 0.3 -0.3 -0.4; dur: 50; dir: alternate; loop: 2");
+            // Muzzle flash
+            flash.setAttribute('intensity', 2);
+            setTimeout(() => flash.setAttribute('intensity', 0), 50);
+        });
+
+        // JUMP
+        let vY = 0, isJumping = false;
+        document.getElementById('jump-btn').addEventListener('touchstart', () => {
+            if (!isJumping) { vY = 0.2; isJumping = true; }
+        });
+
+        // JOYSTICK (MOVEMENT)
+        let mF = 0, mS = 0;
+        nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left: '60px', bottom: '60px'}, color: 'white' })
+        .on('move', (e, d) => {
+            mF = -Math.sin(d.angle.radian) * d.force * 0.08;
+            mS = -Math.cos(d.angle.radian) * d.force * 0.08;
+        }).on('end', () => { mF = 0; mS = 0; });
+
+        function update() {
+            // Move
+            if (mF || mS) {
+                const rot = cam.getAttribute('rotation');
+                const rad = rot.y * (Math.PI / 180);
+                const pos = rig.getAttribute('position');
+                pos.x += (mF * Math.sin(rad) + mS * Math.cos(rad));
+                pos.z += (mF * Math.cos(rad) - mS * Math.sin(rad));
+                rig.setAttribute('position', pos);
+            }
+            // Jump Physics
+            const pos = rig.getAttribute('position');
+            if (isJumping || pos.y > 1.6) {
+                pos.y += vY; vY -= 0.01;
+                if (pos.y <= 1.6) { pos.y = 1.6; isJumping = false; vY = 0; }
+                rig.setAttribute('position', pos);
+            }
+            requestAnimationFrame(update);
+        }
+        update();
+    </script>
+</body>
+</html>
